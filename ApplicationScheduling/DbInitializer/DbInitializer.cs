@@ -38,24 +38,30 @@ namespace ApplicationScheduling.DbInitializer
 
             }
 
-            if (_db.Roles.Any(x => x.Name == Utility.Helper.Admin)) return;
+            if (_db.Roles.Any(x => x.Name == Utility.Helper.Admin) && _db.Users.Any(x=>x.Name== "Admin Spark")) return;
 
+           
+            
+                _roleManager.CreateAsync(new IdentityRole(Helper.Admin)).GetAwaiter().GetResult();
+                _roleManager.CreateAsync(new IdentityRole(Helper.Doctor)).GetAwaiter().GetResult();
+                _roleManager.CreateAsync(new IdentityRole(Helper.Patient)).GetAwaiter().GetResult();
+            
 
-            _roleManager.CreateAsync(new IdentityRole(Helper.Admin)).GetAwaiter().GetResult();
-            _roleManager.CreateAsync(new IdentityRole(Helper.Doctor)).GetAwaiter().GetResult();
-            _roleManager.CreateAsync(new IdentityRole(Helper.Patient)).GetAwaiter().GetResult();
+            
+                _userManager.CreateAsync(new ApplicationUser
+                {
+                    UserName = "admin@gmail.com",
+                    Email = "admin@gmail.com",
+                    EmailConfirmed = true,
+                    Name = "Admin Spark",
+                    PasswordHash = "Admin@123"
 
-            _userManager.CreateAsync(new ApplicationUser
-            {
-                UserName = "admin@gmail.com",
-                Email = "admin@gmail.com",
-                EmailConfirmed = true,
-                Name = "Admin Spark"
+                }, "Admin123*").GetAwaiter().GetResult();
 
-            }, "Admin123*").GetAwaiter().GetResult();
+                ApplicationUser user = _db.Users.FirstOrDefault(u => u.Email == "admin@gmail.com");
 
-            ApplicationUser user = _db.Users.FirstOrDefault(u => u.Email == "admin@gmail.com");
-            _userManager.AddToRoleAsync(user, Helper.Admin).GetAwaiter().GetResult();
+                _userManager.AddToRoleAsync(user, Helper.Admin).GetAwaiter().GetResult();
+            
 
         }
     }
