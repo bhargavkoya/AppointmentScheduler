@@ -118,9 +118,23 @@ stay isolated and reviewable.
 
 **Acceptance:** builds 0/0 ✅; baseline flows pass ✅; appointment start/end times identical to baseline ✅.
 
-### Phase B — `migration/net10-minimal-hosting`
+### Phase B — `migration/net10-minimal-hosting` — ✅ complete
 
 **Goal:** merge `Startup.cs` into `Program.cs` (ADR-0005). Pure refactor.
+
+**Done:** `Program.cs` rewritten with `WebApplication.CreateBuilder(args)`; `ConfigureServices` body →
+`builder.Services.*` verbatim (same DbContext env-branch logic, same registrations); `Configure` body →
+top-level middleware in the **same order**; `IDbInitializer.Initalize()` now runs from an
+`app.Services.CreateScope()` before `app.Run()`. `Startup.cs` deleted. Build 0 errors (only `NU1901`).
+Smoke test (PostgreSQL 16, Development): app boots on minimal hosting, `GET /` 200, register 200, calendar
+API returns the `CommonResponse` envelope, `DbInitializer` runs via the scope. Two compile fixes needed:
+add `using Microsoft.AspNetCore.Builder;` (+ `Hosting`/`DependencyInjection`/`Configuration` — no
+ImplicitUsings in this project) and fully-qualify `ApplicationScheduling.DbInitializer.DbInitializer` to
+disambiguate from the namespace.
+
+---
+
+<details><summary>Original Phase B plan</summary>
 
 1. Replace `Program.cs` with `WebApplication.CreateBuilder(args)`; move `ConfigureServices` body to
    `builder.Services.*`; move `Configure` body to run against `app`, **preserving order**:
@@ -135,6 +149,8 @@ stay isolated and reviewable.
 6. PR — diff should be almost entirely `Program.cs`.
 
 **Acceptance:** identical runtime behaviour; no `Startup` type remains.
+
+</details>
 
 ### Phase C — `migration/net10-dependency-cleanup`
 
