@@ -1,6 +1,6 @@
 # .NET 5 → .NET 10 Migration Plan
 
-Status: **Phase A complete** · Owner: repo maintainer · Related: `DECISIONS.md` ADR-0002/0004/0005/0006/0008
+Status: **Phase C complete** · Owner: repo maintainer · Related: `DECISIONS.md` ADR-0002/0004/0005/0006/0008
 
 This plan upgrades `ApplicationScheduling` from `net5.0` (end-of-life) to `net10.0` (LTS) at the
 **Moderate** scope agreed in ADR-0002. Each phase is a branch off `master` and a separate PR so problems
@@ -152,20 +152,26 @@ disambiguate from the namespace.
 
 </details>
 
-### Phase C — `migration/net10-dependency-cleanup`
+### Phase C — `migration/net10-dependency-cleanup` — ✅ complete
 
 **Goal:** trim dependencies (ADR-0006).
 
-1. Remove `Microsoft.EntityFrameworkCore.SqlServer`. `dotnet build` — confirm nothing referenced it.
-2. Decide on `Microsoft.VisualStudio.Web.CodeGeneration.Design`: keep at `10.0.*` only if scaffolding is
-   actually used; otherwise remove.
-3. If the updated Mailjet client no longer needs `Newtonsoft.Json`, rewrite the `JObject`/`JArray` usage in
-   `EmailSender` with the client's native types (or `System.Text.Json.Nodes`) and drop the package.
-4. `dotnet build` 0/0; smoke-test **email** specifically (configure Mailjet in user-secrets and send one),
-   plus a quick pass of the other flows.
-5. PR.
+**Done:**
+1. ✅ Removed `Microsoft.EntityFrameworkCore.SqlServer` — `grep` confirmed no `UseSqlServer` / `SqlClient` /
+   scaffold usage anywhere; `Microsoft.SqlServer.Server` transitive also drops out.
+2. ✅ Removed `Microsoft.VisualStudio.Web.CodeGeneration.Design` — design-time scaffolding only, unused at
+   build/runtime, and the sole source of the `NU1901` warnings (its `NuGet.Packaging` / `NuGet.Protocol`
+   6.12.1 transitives). `dotnet ef` still works via `Microsoft.EntityFrameworkCore.Tools` (kept).
+3. ⏭️ **Deferred — `Newtonsoft.Json` stays.** It is transitive-only (via `Mailjet.Api` 2.0.2, which needs
+   `JObject`/`JArray` in its `MailjetRequest.Property(...)` API), not a direct reference. Dropping it means
+   a `Mailjet.Api` 2 → 4 major upgrade with API changes in `EmailSender` and its own send-path testing —
+   tracked as a separate follow-up, not part of this behaviour-preserving migration.
+4. ✅ `dotnet build` → **0 warnings, 0 errors** (target state reached). Smoke test (PostgreSQL 16,
+   Development): boots, `GET /` 200, register 200, appointment creation succeeds; Mailjet-unconfigured path
+   still no-ops with a `warn` log (real send not tested — needs Mailjet creds in user-secrets).
 
-**Acceptance:** builds 0/0; email sends; dependency list is only what the code uses.
+**Acceptance:** builds 0/0 ✅; dependency list is only what the code uses ✅ (bar the documented transitive
+`Newtonsoft.Json`); real email send ⏭️ owner-verified when credentials are available.
 
 ### Phase D — `migration/net10-hardening` (optional, same milestone)
 
