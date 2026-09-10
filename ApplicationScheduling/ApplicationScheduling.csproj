@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net5.0</TargetFramework>
     <CopyRefAssembliesToPublishDirectory>false</CopyRefAssembliesToPublishDirectory>
+    <UserSecretsId>applicationscheduling-6b1f4c2e-0d3a-4e77-9a1b-appointmentsched</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

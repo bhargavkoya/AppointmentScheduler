@@ -2,6 +2,7 @@
 using ApplicationScheduling.Models.ViewModels;
 using ApplicationScheduling.Utility;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,11 +14,13 @@ namespace ApplicationScheduling.Services
     {
         private readonly ApplicationDbContext _db;
         private readonly IEmailSender _emailSender;
+        private readonly IConfiguration _configuration;
 
-        public AppointmentService(ApplicationDbContext db,IEmailSender emailSender)
+        public AppointmentService(ApplicationDbContext db, IEmailSender emailSender, IConfiguration configuration)
         {
             this._db = db;
             this._emailSender = emailSender;
+            this._configuration = configuration;
         }
 
         public async Task<int> AddUpdate(AppointmentVM model)
@@ -57,9 +60,13 @@ namespace ApplicationScheduling.Services
                     IsDoctorApproved = false,
                     AdminId = model.AdminId
                 };
-               await _emailSender.SendEmailAsync("bhargavkoya99@gmail.com", "Appointment Created",
-                    $"Your appointment with {patient.Name} is created and in pending status");
-               await _emailSender.SendEmailAsync(patient.Email, "Appointment Created",
+                var adminEmail = _configuration["Notifications:AdminEmail"];
+                if (!string.IsNullOrWhiteSpace(adminEmail))
+                {
+                    await _emailSender.SendEmailAsync(adminEmail, "Appointment Created",
+                        $"Your appointment with {patient.Name} is created and in pending status");
+                }
+                await _emailSender.SendEmailAsync(patient.Email, "Appointment Created",
                     $"Your appointment with {doctor.Name} is created and in pending status");
                 _db.Appointments.Add(appointment);
                 await _db.SaveChangesAsync();
