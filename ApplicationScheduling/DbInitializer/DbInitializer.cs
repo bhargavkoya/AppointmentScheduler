@@ -1,7 +1,9 @@
-﻿using ApplicationScheduling.Models;
+using ApplicationScheduling.Models;
 using ApplicationScheduling.Utility;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,14 +16,18 @@ namespace ApplicationScheduling.DbInitializer
         private readonly ApplicationDbContext _db;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<DbInitializer> _logger;
 
 
         public DbInitializer(ApplicationDbContext db, UserManager<ApplicationUser> userManager,
-            RoleManager<IdentityRole> roleManager)
+            RoleManager<IdentityRole> roleManager, IConfiguration configuration, ILogger<DbInitializer> logger)
         {
             _db = db;
             _roleManager = roleManager;
             _userManager = userManager;
+            _configuration = configuration;
+            _logger = logger;
         }
 
         public void Initalize()
@@ -33,36 +39,51 @@ namespace ApplicationScheduling.DbInitializer
                     _db.Database.Migrate();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                _logger.LogError(ex, "Applying pending EF Core migrations on startup failed.");
             }
 
-            if (_db.Roles.Any(x => x.Name == Utility.Helper.Admin) && _db.Users.Any(x=>x.Name== "Admin Spark")) return;
-
-           
-            
-                _roleManager.CreateAsync(new IdentityRole(Helper.Admin)).GetAwaiter().GetResult();
-                _roleManager.CreateAsync(new IdentityRole(Helper.Doctor)).GetAwaiter().GetResult();
-                _roleManager.CreateAsync(new IdentityRole(Helper.Patient)).GetAwaiter().GetResult();
-            
-
-            
-                _userManager.CreateAsync(new ApplicationUser
+            foreach (var roleName in new[] { Helper.Admin, Helper.Doctor, Helper.Patient })
+            {
+                if (!_roleManager.RoleExistsAsync(roleName).GetAwaiter().GetResult())
                 {
-                    UserName = "admin@gmail.com",
-                    Email = "admin@gmail.com",
-                    EmailConfirmed = true,
-                    Name = "Admin Spark",
-                    PasswordHash = "Admin@123"
+                    _roleManager.CreateAsync(new IdentityRole(roleName)).GetAwaiter().GetResult();
+                }
+            }
 
-                }, "Admin123*").GetAwaiter().GetResult();
+            var adminEmail = _configuration["SeedAdmin:Email"];
+            var adminName = _configuration["SeedAdmin:Name"] ?? "Administrator";
+            var adminPassword = _configuration["SeedAdmin:Password"];
 
-                ApplicationUser user = _db.Users.FirstOrDefault(u => u.Email == "admin@gmail.com");
+            if (string.IsNullOrWhiteSpace(adminEmail) || string.IsNullOrWhiteSpace(adminPassword))
+            {
+                _logger.LogWarning("SeedAdmin:Email / SeedAdmin:Password not configured; skipping admin user seeding.");
+                return;
+            }
 
-                _userManager.AddToRoleAsync(user, Helper.Admin).GetAwaiter().GetResult();
-            
+            if (_db.Users.Any(u => u.Email == adminEmail))
+            {
+                return;
+            }
 
+            var result = _userManager.CreateAsync(new ApplicationUser
+            {
+                UserName = adminEmail,
+                Email = adminEmail,
+                EmailConfirmed = true,
+                Name = adminName
+            }, adminPassword).GetAwaiter().GetResult();
+
+            if (!result.Succeeded)
+            {
+                _logger.LogError("Failed to create seed admin user: {Errors}",
+                    string.Join("; ", result.Errors.Select(e => e.Description)));
+                return;
+            }
+
+            var user = _db.Users.FirstOrDefault(u => u.Email == adminEmail);
+            _userManager.AddToRoleAsync(user, Helper.Admin).GetAwaiter().GetResult();
         }
     }
 }
