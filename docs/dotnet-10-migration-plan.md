@@ -79,22 +79,37 @@ stay isolated and reviewable.
 
 ## 5. Phases
 
-### Phase A — `migration/net10-retarget`
+### Phase A — `migration/net10-retarget` — ⏳ in progress (build done, runtime smoke test pending)
 
 **Goal:** compile on `net10.0` with minimal edits; keep `Startup.cs`.
 
-1. `ApplicationScheduling.csproj`: `<TargetFramework>net10.0</TargetFramework>`. Add `global.json` at root.
-2. Bump every package in the table to `10.0.*` (except the two flagged remove/evaluate — leave SqlServer in
-   for now so this PR is purely a retarget). `dotnet restore`.
-3. `dotnet build`. Work through breaks — expected candidates:
-   - **Npgsql `DateTime` / timestamp behaviour** (Npgsql 6+; the biggest risk — see §6).
-   - Obsolete-API warnings on Identity / hosting extension methods.
-   - `Newtonsoft.Json` version conflicts pulled by the new Mailjet vs. anything else.
-4. `dotnet run`, smoke-test every flow from the baseline. Pay attention to appointment **times** round-tripping
-   correctly (create → read back on the calendar → edit).
-5. PR. Description lists each break and its fix, plus the smoke-test results.
+1. ✅ `ApplicationScheduling.csproj`: `<TargetFramework>net10.0</TargetFramework>`; `global.json` added
+   (pins SDK `10.0.401`, `rollForward: latestFeature`).
+2. ✅ Packages bumped: Identity.EntityFrameworkCore / Identity.UI / Mvc.Razor.RuntimeCompilation /
+   EntityFrameworkCore.SqlServer / EntityFrameworkCore.Tools → `10.0.12`; CodeGeneration.Design → `10.0.2`;
+   Npgsql.EntityFrameworkCore.PostgreSQL → `10.0.3`. `Mailjet.Api` left at `2.0.2` (no 10.x; evaluated in
+   Phase C). SqlServer package intentionally left in for this PR.
+3. ✅ `dotnet build` → **0 errors**. Warnings: only `NU1901` (low-severity, transitive from
+   CodeGeneration.Design → `NuGet.Packaging` / `NuGet.Protocol` 6.12.1) — clears in Phase C when that package
+   is removed. **No** obsolete-API or source-compat warnings; **no** Newtonsoft version conflict.
+4. ✅ **Break found & fixed:** `Properties/launchSettings.json` had `"dotnetRunMessages": "true"` (string).
+   .NET 10's launch-settings parser is strict and rejected it (`JSON value could not be converted to
+   System.Boolean`), which made the profile silently not apply → app fell through to the Heroku
+   `DATABASE_URL` branch and `NullReferenceException`. Fixed to boolean `true`.
+5. ⏳ Runtime smoke test — **needs a reachable PostgreSQL + credentials** (not available in this
+   environment; `localhost:5432` refused). Verified so far without a DB: config binding, DI resolution,
+   generic-host startup, EF Core + Npgsql 10 init, and `DbInitializer` running (fails cleanly at DB connect
+   and logs, as designed). Still to verify against a DB: migration applies; register/login; calendar CRUD
+   API; **appointment start/end times round-trip unchanged** (the Npgsql-timestamp check, §6); doctor
+   approve/edit/delete; doctor-filter dropdown.
 
-**Acceptance:** builds 0/0; all baseline flows pass; appointment start/end times identical to baseline.
+**Acceptance:** builds 0/0 ✅; all baseline flows pass ⏳; appointment start/end times identical to baseline ⏳.
+
+> Note on the §6 timestamp risk after code review: values are built with `DateTime.Parse(string)` →
+> `DateTimeKind.Unspecified`, and the columns are `timestamp without time zone`. That pairing is *not* the
+> combination Npgsql 6+ rejects (it rejects `Utc`/`Local` kinds against `timestamp without time zone`, and
+> `Unspecified` against `timestamptz`). So the legacy switch is likely **not** needed — but this must still
+> be confirmed by the runtime round-trip test before Phase A is accepted.
 
 ### Phase B — `migration/net10-minimal-hosting`
 
