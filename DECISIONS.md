@@ -59,7 +59,10 @@ untracked `bin/obj`, which is harmless). History is **not** rewritten (see ADR-0
 
 ## ADR-0006 — Keep PostgreSQL; drop the unused SQL Server EF provider
 
-**Date:** 2026-09-10 · **Status:** Accepted (implementation deferred to the migration)
+**Date:** 2026-09-10 · **Status:** Done (Phase C — `migration/net10-dependency-cleanup`). Also removed
+`Microsoft.VisualStudio.Web.CodeGeneration.Design` (unused scaffolding, sole source of the `NU1901`
+warnings). `Newtonsoft.Json` stays as a documented transitive of `Mailjet.Api` 2.0.2; removing it needs a
+separate Mailjet 2 → 4 upgrade. Build is now 0 warnings / 0 errors.
 
 **Context.** `ApplicationScheduling.csproj` references both `Microsoft.EntityFrameworkCore.SqlServer` and
 `Npgsql.EntityFrameworkCore.PostgreSQL`. Only Npgsql is wired up (`options.UseNpgsql(...)` in `Startup`), and
