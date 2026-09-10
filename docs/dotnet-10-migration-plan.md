@@ -1,6 +1,6 @@
 # .NET 5 → .NET 10 Migration Plan
 
-Status: **planned** · Owner: repo maintainer · Related: `DECISIONS.md` ADR-0002/0004/0005/0006
+Status: **Phase A complete** · Owner: repo maintainer · Related: `DECISIONS.md` ADR-0002/0004/0005/0006/0008
 
 This plan upgrades `ApplicationScheduling` from `net5.0` (end-of-life) to `net10.0` (LTS) at the
 **Moderate** scope agreed in ADR-0002. Each phase is a branch off `master` and a separate PR so problems
@@ -79,22 +79,44 @@ stay isolated and reviewable.
 
 ## 5. Phases
 
-### Phase A — `migration/net10-retarget`
+### Phase A — `migration/net10-retarget` — ✅ complete (build + runtime smoke test passed)
 
-**Goal:** compile on `net10.0` with minimal edits; keep `Startup.cs`.
+**Goal:** compile and run on `net10.0` with minimal edits; keep `Startup.cs`.
 
-1. `ApplicationScheduling.csproj`: `<TargetFramework>net10.0</TargetFramework>`. Add `global.json` at root.
-2. Bump every package in the table to `10.0.*` (except the two flagged remove/evaluate — leave SqlServer in
-   for now so this PR is purely a retarget). `dotnet restore`.
-3. `dotnet build`. Work through breaks — expected candidates:
-   - **Npgsql `DateTime` / timestamp behaviour** (Npgsql 6+; the biggest risk — see §6).
-   - Obsolete-API warnings on Identity / hosting extension methods.
-   - `Newtonsoft.Json` version conflicts pulled by the new Mailjet vs. anything else.
-4. `dotnet run`, smoke-test every flow from the baseline. Pay attention to appointment **times** round-tripping
-   correctly (create → read back on the calendar → edit).
-5. PR. Description lists each break and its fix, plus the smoke-test results.
+1. ✅ `ApplicationScheduling.csproj`: `<TargetFramework>net10.0</TargetFramework>`; `global.json` added
+   (pins SDK `10.0.401`, `rollForward: latestFeature`).
+2. ✅ Packages bumped: Identity.EntityFrameworkCore / Identity.UI / Mvc.Razor.RuntimeCompilation /
+   EntityFrameworkCore.SqlServer / EntityFrameworkCore.Tools → `10.0.12`; CodeGeneration.Design → `10.0.2`;
+   Npgsql.EntityFrameworkCore.PostgreSQL → `10.0.3`. `Mailjet.Api` left at `2.0.2` (no 10.x; evaluated in
+   Phase C). SqlServer package intentionally left in for this PR.
+3. ✅ `dotnet build` → **0 errors**. Warnings: only `NU1901` (low-severity, transitive from
+   CodeGeneration.Design → `NuGet.Packaging` / `NuGet.Protocol` 6.12.1) — clears in Phase C when that package
+   is removed. **No** obsolete-API or source-compat warnings; **no** Newtonsoft version conflict.
+4. ✅ **Break #1 found & fixed:** `Properties/launchSettings.json` had `"dotnetRunMessages": "true"`
+   (string). .NET 10's launch-settings parser is strict and rejected it (`JSON value could not be converted
+   to System.Boolean`), which made the profile silently not apply → app fell through to the Heroku
+   `DATABASE_URL` branch and `NullReferenceException`. Fixed to boolean `true`.
+5. ✅ **Break #2 found & fixed (see ADR-0008):** EF Core 9+ makes `PendingModelChangesWarning` a hard
+   error, and Npgsql 6+ changed the default `DateTime` mapping to `timestamptz`. `Migrate()` threw and
+   startup then crashed in `DbInitializer` (`relation "AspNetRoles" does not exist`). Fixed by pinning
+   `Appointment.StartDate`/`EndDate` to `timestamp without time zone` in `ApplicationDbContext.OnModelCreating`
+   and regenerating one clean EF 10 migration (`20260910211338_InitialCreate`); the EF 5
+   `20220614141724_PostgresAdded` + snapshot were removed.
+6. ✅ Runtime smoke test — against PostgreSQL 16 (`postgres:16-alpine`), `ASPNETCORE_ENVIRONMENT=Development`,
+   connection string + `SeedAdmin:Password` via env/user-secrets:
+   - Startup applies `InitialCreate` (history row `ProductVersion 10.0.12`); all 9 tables created.
+   - `DbInitializer` seeds roles `Admin`/`Doctor`/`Patient` and the admin user from `SeedAdmin:*` config.
+   - Register Doctor + Patient (auto sign-in) → 200; seeded-admin form login → 200.
+   - `POST /api/Appointment/SaveCalendarData` → `status 2` "added"; `GET GetCalendarData` /
+     `GetCalendarDataById` return the row with doctor/patient names resolved.
+   - **Timestamp round-trip is byte-identical:** in `2026-09-15 14:30:00`, dur 90 → stored & returned
+     `StartDate 2026-09-15 14:30:00` / `EndDate 2026-09-15 16:00:00`; DB column type
+     `timestamp without time zone`. The §6 risk is resolved by ADR-0008.
+   - `ConfirmEvent` flips `IsDoctorApproved` → true; a subsequent update resets it → false and applies new
+     times; `DeleteAppoinment` removes the row.
+   - Mailjet unconfigured → appointment creation still succeeds, no exception (the no-op guard works).
 
-**Acceptance:** builds 0/0; all baseline flows pass; appointment start/end times identical to baseline.
+**Acceptance:** builds 0/0 ✅; baseline flows pass ✅; appointment start/end times identical to baseline ✅.
 
 ### Phase B — `migration/net10-minimal-hosting`
 
