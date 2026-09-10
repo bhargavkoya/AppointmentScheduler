@@ -6,6 +6,39 @@ link to code or the migration plan for detail. Do not rewrite past entries — s
 
 ---
 
+## ADR-0008 — Keep `Appointment` timestamps as `timestamp without time zone`; regenerate migrations for EF 10
+
+**Date:** 2026-09-10 · **Status:** Accepted
+
+**Context.** Phase A of the .NET 10 upgrade surfaced two coupled issues:
+1. EF Core 9+ escalates `PendingModelChangesWarning` to a **hard error** in `Migrate()`.
+2. The Npgsql provider changed its default `DateTime` mapping from `timestamp without time zone` (v5) to
+   `timestamp with time zone` / `timestamptz` (v6+). So EF 10 computed a model that no longer matched the
+   EF 5 migration snapshot, `Migrate()` threw, and startup then crashed in `DbInitializer` on tables that
+   were never created.
+
+`timestamptz` also requires `DateTime` values with `Kind=Utc`; the app builds them with
+`DateTime.Parse(string)` → `Kind=Unspecified`, which Npgsql 10 rejects for that column type.
+
+**Decision.**
+- **Preserve current behaviour.** Pin `Appointment.StartDate` / `EndDate` to `timestamp without time zone`
+  in `ApplicationDbContext.OnModelCreating`. No schema change, no change to how naive local-ish times are
+  stored or displayed on the calendar.
+- **Regenerate migrations.** The app has no live database (the old Heroku DB is gone), so the single EF 5
+  migration + snapshot were deleted and replaced with one fresh EF 10 `InitialCreate`
+  (`20260910211338_InitialCreate`, ProductVersion 10.0.12). Anyone holding a pre-existing database would
+  have to baseline — not applicable here.
+- Proper timezone-aware handling (move to `timestamptz` + UTC normalisation in `AppointmentService` and the
+  read-side formatting, with calendar-display verification) remains a **separate future ADR / PR**, already
+  listed in the migration plan's out-of-scope section.
+
+**Consequences.** `git log` no longer shows `20220614141724_PostgresAdded`. Verified end-to-end: migration
+applies on PostgreSQL 16, roles + admin seed, and appointment start/end times round-trip byte-identical
+through create / read / update. If a `timestamptz` move happens later it is a deliberate schema migration
+with its own `Down()`.
+
+---
+
 ## ADR-0007 — Branch and PR conventions
 
 **Date:** 2026-09-10 · **Status:** Accepted
